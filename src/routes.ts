@@ -7,7 +7,7 @@ const router = Router();
 const scans = new Map<string, { status: 'running' | 'done' | 'error'; result?: ScanResult; error?: string }>();
 
 router.post('/scan', (req: Request, res: Response): void => {
-  const { url, concurrency, delayMin, delayMax } = req.body;
+  const { url, concurrency, delayMin, delayMax, maxDepth } = req.body;
 
   if (!url || typeof url !== 'string') {
     res.status(400).json({ error: 'Se requiere el campo "url" (string).' });
@@ -33,7 +33,8 @@ router.post('/scan', (req: Request, res: Response): void => {
     parsed.href,
     concurrency ?? 5,
     delayMin ?? 300,
-    delayMax ?? 1500
+    delayMax ?? 1500,
+    maxDepth ?? 2
   )
     .then((result) => {
       scans.set(id, { status: 'done', result });
