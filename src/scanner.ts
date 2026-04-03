@@ -46,7 +46,17 @@ function resolveUrl(base: string, href: string): string | null {
   }
 }
 
-function normalizeUrl(raw: string): string | null {
+export function isSameDomain(url: string, baseUrl: string): boolean {
+  try {
+    const a = new URL(url);
+    const b = new URL(baseUrl);
+    return a.hostname.toLowerCase() === b.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeUrl(raw: string): string | null {
   try {
     const u = new URL(raw);
     u.hash = '';
@@ -78,27 +88,38 @@ function sortErrorsFirst(results: LinkResult[]): void {
   });
 }
 
-function extractLinks(
-  html: string,
-  baseUrl: string,
-  visited: Set<string>
-): { text: string; href: string; normalized: string }[] {
-  const $ = cheerio.load(html);
-  const links: { text: string; href: string; normalized: string }[] = [];
+export interface RawLink {
+  text: string;
+  href: string;
+  invalid: boolean;
+}
 
-  $('a[href]').each((_, el) => {
-    const href = $(el).attr('href')?.trim();
+export function extractLinks(
+  html: string,
+  baseUrl: string
+): RawLink[] {
+  const $ = cheerio.load(html);
+  const links: RawLink[] = [];
+
+  // Capturar links de cualquier elemento: <a>, <area>, <button>, o cualquier
+  // elemento con href, data-href, data-url. Excluimos <link> y <base>.
+  // SIN deduplicación: cada ocurrencia se reporta.
+  $('[href], [data-href], [data-url]').each((_, el) => {
+    const tagName = (el as any).tagName?.toLowerCase?.() ?? (el as any).name?.toLowerCase?.() ?? '';
+    if (tagName === 'link' || tagName === 'base') return;
+
+    const href = ($(el).attr('href') || $(el).attr('data-href') || $(el).attr('data-url'))?.trim();
     if (!href || !isNavigableUrl(href)) return;
 
+    const text = $(el).text().trim() || $(el).attr('title')?.trim() || href;
     const resolved = resolveUrl(baseUrl, href);
-    if (!resolved) return;
 
-    const normalized = normalizeUrl(resolved);
-    if (!normalized) return;
-    if (visited.has(normalized)) return;
+    if (!resolved) {
+      links.push({ text, href, invalid: true });
+      return;
+    }
 
-    const text = $(el).text().trim() || $(el).attr('title')?.trim() || resolved;
-    links.push({ text, href: resolved, normalized });
+    links.push({ text, href: resolved, invalid: false });
   });
 
   return links;
@@ -148,15 +169,22 @@ export async function scanPage(
 ): Promise<ScanResult> {
   const start = Date.now();
   const client = createClient();
-  const visited = new Set<string>();
   const allResults: LinkResult[] = [];
   let pagesVisited = 0;
+
+  // Cache de fetch: evita re-hacer HTTP al mismo string exacto de URL
+  const fetchCache = new Map<string, { status: number | null; resolvedUrl: string; html: string | null; error: string | null }>();
+  // Páginas ya crawleadas para sub-links (evita loops infinitos)
+  const enteredPages = new Set<string>();
 
   const pLimit = (await import('p-limit')).default;
   const limit = pLimit(concurrency);
 
-  const rootNorm = normalizeUrl(url);
-  if (rootNorm) visited.add(rootNorm);
+  enteredPages.add(url);
+
+  console.log(`\n🔍 [SCAN] Iniciando: ${url}`);
+  console.log(`   Concurrencia: ${concurrency} | Delay: ${delayMin}-${delayMax}ms | Profundidad: ${maxDepth}`);
+  console.log(`   Cargando página raíz...`);
 
   const pageResponse = await client.get(url, {
     headers: buildBrowserHeaders(),
@@ -171,63 +199,122 @@ export async function scanPage(
   const pageTitle = $('title').first().text().trim() || '(sin título)';
   pagesVisited++;
 
-  const rootLinks = extractLinks(rootHtml, url, visited);
-  for (const link of rootLinks) {
-    visited.add(link.normalized);
-  }
+  const rootLinks = extractLinks(rootHtml, url);
+  console.log(`   ✅ Página raíz cargada: "${pageTitle}"`);
+  console.log(`   🔗 Links encontrados en raíz: ${rootLinks.length}\n`);
+
   const shuffledRoot = shuffleArray(rootLinks);
 
-  const depth1Results = await Promise.all(
-    shuffledRoot.map((link) =>
+  // Identificar URLs únicas a fetchear (string exacto) para no repetir requests
+  const uniqueDepth1Hrefs = [...new Set(shuffledRoot.filter(l => !l.invalid).map(l => l.href))];
+  console.log(`📡 [Depth 1] Fetching ${uniqueDepth1Hrefs.length} URLs únicas (${shuffledRoot.length} ocurrencias totales)...`);
+  let d1Done = 0;
+
+  // Fetch todas las URLs únicas
+  await Promise.all(
+    uniqueDepth1Hrefs.map((href) =>
       limit(async () => {
-        const result = await fetchAndCheck(client, link, url, delayMin, delayMax);
-        return { link, result };
+        const result = await fetchAndCheck(client, { text: '', href }, url, delayMin, delayMax);
+        fetchCache.set(href, result);
+        d1Done++;
+        const icon = result.status === null ? '❌' : result.status >= 400 ? '⚠️' : '✅';
+        console.log(`   ${icon} [${d1Done}/${uniqueDepth1Hrefs.length}] ${result.status ?? 'NULL'} → ${href}`);
       })
     )
   );
 
-  const depth2Queue: { text: string; href: string; html: string; parentUrl: string }[] = [];
+  const depth2Queue: { href: string; html: string; parentUrl: string }[] = [];
 
-  for (const { link, result } of depth1Results) {
+  // Reportar CADA ocurrencia (sin dedup)
+  for (const link of shuffledRoot) {
+    if (link.invalid) {
+      allResults.push({
+        text: link.text,
+        href: link.href,
+        resolvedUrl: link.href,
+        status: null,
+        error: 'URL inválida',
+        foundOn: url,
+        depth: 1,
+      });
+      continue;
+    }
+
+    const cached = fetchCache.get(link.href)!;
     allResults.push({
       text: link.text,
       href: link.href,
-      resolvedUrl: result.resolvedUrl,
-      status: result.status,
-      error: result.error,
+      resolvedUrl: cached.resolvedUrl,
+      status: cached.status,
+      error: cached.error,
       foundOn: url,
       depth: 1,
     });
-    if (result.html && result.status !== null && result.status < 400 && maxDepth >= 2) {
+
+    // Encolar para depth 2 solo si es interno, HTML válido, y no se entró antes
+    const isInternal = isSameDomain(link.href, url);
+    if (
+      isInternal &&
+      cached.html &&
+      cached.status !== null &&
+      cached.status < 400 &&
+      maxDepth >= 2 &&
+      !enteredPages.has(cached.resolvedUrl)
+    ) {
+      enteredPages.add(cached.resolvedUrl);
       pagesVisited++;
-      depth2Queue.push({ text: link.text, href: link.href, html: result.html, parentUrl: result.resolvedUrl });
+      depth2Queue.push({ href: link.href, html: cached.html, parentUrl: cached.resolvedUrl });
     }
   }
 
   if (maxDepth >= 2) {
+    console.log(`\n📄 [Depth 2] ${depth2Queue.length} páginas internas por analizar...`);
+    let pageIdx = 0;
     for (const page of depth2Queue) {
-      const subLinks = extractLinks(page.html, page.parentUrl, visited);
-      for (const sl of subLinks) {
-        visited.add(sl.normalized);
-      }
-      const shuffledSub = shuffleArray(subLinks);
+      pageIdx++;
+      const subLinks = extractLinks(page.html, page.parentUrl);
 
-      const depth2Results = await Promise.all(
-        shuffledSub.map((sl) =>
+      // Identificar URLs únicas a fetchear en este nivel
+      const uniqueSubHrefs = [...new Set(
+        subLinks.filter(l => !l.invalid).map(l => l.href).filter(h => !fetchCache.has(h))
+      )];
+      console.log(`\n   📄 [${pageIdx}/${depth2Queue.length}] ${page.parentUrl}`);
+      console.log(`      Links: ${subLinks.length} | Nuevas URLs a fetchear: ${uniqueSubHrefs.length}`);
+      let d2Done = 0;
+
+      await Promise.all(
+        uniqueSubHrefs.map((href) =>
           limit(async () => {
-            const result = await fetchAndCheck(client, sl, page.parentUrl, delayMin, delayMax);
-            return { sl, result };
+            const result = await fetchAndCheck(client, { text: '', href }, page.parentUrl, delayMin, delayMax);
+            fetchCache.set(href, result);
+            d2Done++;
+            const icon = result.status === null ? '❌' : result.status >= 400 ? '⚠️' : '✅';
+            console.log(`      ${icon} [${d2Done}/${uniqueSubHrefs.length}] ${result.status ?? 'NULL'} → ${href}`);
           })
         )
       );
 
-      for (const { sl, result } of depth2Results) {
+      for (const sl of subLinks) {
+        if (sl.invalid) {
+          allResults.push({
+            text: sl.text,
+            href: sl.href,
+            resolvedUrl: sl.href,
+            status: null,
+            error: 'URL inválida',
+            foundOn: page.href,
+            depth: 2,
+          });
+          continue;
+        }
+
+        const cached = fetchCache.get(sl.href)!;
         allResults.push({
           text: sl.text,
           href: sl.href,
-          resolvedUrl: result.resolvedUrl,
-          status: result.status,
-          error: result.error,
+          resolvedUrl: cached.resolvedUrl,
+          status: cached.status,
+          error: cached.error,
           foundOn: page.href,
           depth: 2,
         });
@@ -236,6 +323,11 @@ export async function scanPage(
   }
 
   sortErrorsFirst(allResults);
+
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  const errors = allResults.filter(r => r.status === null || (r.status !== null && r.status >= 400)).length;
+  console.log(`\n✅ [SCAN COMPLETADO] ${elapsed}s`);
+  console.log(`   Total links: ${allResults.length} | Errores/4xx: ${errors} | Páginas visitadas: ${pagesVisited}\n`);
 
   return {
     url,

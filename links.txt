@@ -1,0 +1,15 @@
+# Archivo de links de prueba
+# Ingresa 10 URLs (buenas y malas) una por línea.
+# Las líneas que empiecen con # se ignoran.
+
+https://www.google.com
+https://www.github.com
+https://www.example.com
+https://www.ionna.com/
+https://www.ionna.com/]
+https://www.ionna.com'
+https://sitio-inexistente-xyz123.com
+https://www.google.com//s
+https://www.roswellhyundai.com/
+
+
