@@ -9,6 +9,7 @@ export interface LinkResult {
   href: string;
   resolvedUrl: string;
   status: number | null;
+  reason: string | null;
   error: string | null;
   foundOn: string;
   depth: number;
@@ -88,6 +89,66 @@ function sortErrorsFirst(results: LinkResult[]): void {
   });
 }
 
+const LOGIN_DOMAINS = [
+  'facebook.com', 'instagram.com', 'linkedin.com', 'twitter.com', 'x.com',
+  'tiktok.com', 'pinterest.com', 'snapchat.com', 'reddit.com',
+];
+
+function describeReason(status: number | null, errorCode: string | null, url: string): string | null {
+  // 200 → sin motivo
+  if (status === 200) return null;
+
+  const hostname = (() => { try { return new URL(url).hostname.toLowerCase(); } catch { return ''; } })();
+  const isLoginSite = LOGIN_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
+
+  // Sin respuesta (status null) → describir según el error
+  if (status === null) {
+    if (!errorCode) return 'Sin respuesta del servidor';
+    const code = errorCode.toUpperCase();
+    if (code === 'ENOTFOUND') return 'Dominio no encontrado — el DNS no puede resolver esta dirección';
+    if (code === 'ETIMEDOUT' || code === 'TIMEOUT') return 'Tiempo de espera agotado — el servidor no respondió';
+    if (code === 'ECONNREFUSED') return 'Conexión rechazada — el servidor no acepta conexiones en este puerto';
+    if (code === 'ECONNRESET') return 'Conexión reiniciada — el servidor cortó la conexión abruptamente';
+    if (code === 'ECONNABORTED') return 'Conexión abortada — se excedió el tiempo límite de la solicitud';
+    if (code === 'ERR_BAD_REQUEST') return 'URL malformada o solicitud inválida';
+    if (code.includes('CERT') || code.includes('TLS') || code.includes('SSL')) return 'Error de certificado SSL/TLS — conexión segura no pudo establecerse';
+    if (code === 'EHOSTUNREACH') return 'Host inalcanzable — no se puede llegar al servidor';
+    if (code === 'ENETUNREACH') return 'Red inalcanzable — no hay ruta de red hacia el destino';
+    if (code === 'ERR_FR_TOO_MANY_REDIRECTS') return 'Demasiadas redirecciones — posible loop de redirección';
+    return `Error de conexión: ${errorCode}`;
+  }
+
+  // Redirecciones (3xx)
+  if (status === 301) return 'Redirección permanente a otra URL';
+  if (status === 302 || status === 307 || status === 308) return 'Redirección temporal a otra URL';
+  if (status >= 300 && status < 400) return `Redirección (${status})`;
+
+  // Errores del cliente (4xx)
+  if (status === 400) return 'Solicitud incorrecta (Bad Request) — el servidor no entiende la petición';
+  if (status === 401) return isLoginSite
+    ? `Requiere autenticación — ${hostname} necesita inicio de sesión para acceder a este contenido`
+    : 'Requiere autenticación (credenciales no proporcionadas)';
+  if (status === 403) return isLoginSite
+    ? `Acceso bloqueado — ${hostname} requiere inicio de sesión o bloquea el acceso automatizado`
+    : 'Acceso prohibido — el servidor rechaza la solicitud (posible bloqueo de bots o permisos insuficientes)';
+  if (status === 404) return 'Página no encontrada — la URL no existe en el servidor';
+  if (status === 405) return 'Método HTTP no permitido por el servidor';
+  if (status === 408) return 'Tiempo de espera del servidor agotado (Request Timeout)';
+  if (status === 410) return 'Recurso eliminado permanentemente — la página fue removida intencionalmente';
+  if (status === 429) return 'Demasiadas solicitudes — el servidor aplicó límite de tasa (rate limit)';
+  if (status === 451) return 'No disponible por razones legales';
+  if (status >= 400 && status < 500) return `Error del cliente (${status})`;
+
+  // Errores del servidor (5xx)
+  if (status === 500) return 'Error interno del servidor — fallo en la aplicación web';
+  if (status === 502) return 'Bad Gateway — el servidor intermediario recibió una respuesta inválida';
+  if (status === 503) return 'Servicio no disponible — el servidor está temporalmente fuera de servicio o en mantenimiento';
+  if (status === 504) return 'Gateway Timeout — el servidor intermediario no recibió respuesta a tiempo';
+  if (status >= 500) return `Error del servidor (${status})`;
+
+  return `Respuesta con status ${status}`;
+}
+
 export interface RawLink {
   text: string;
   href: string;
@@ -131,7 +192,7 @@ async function fetchAndCheck(
   referer: string,
   delayMin: number,
   delayMax: number
-): Promise<{ status: number | null; resolvedUrl: string; html: string | null; error: string | null }> {
+): Promise<{ status: number | null; resolvedUrl: string; html: string | null; error: string | null; reason: string | null }> {
   await randomDelay(delayMin, delayMax);
   try {
     const res = await client.get(link.href, {
@@ -149,13 +210,16 @@ async function fetchAndCheck(
       resolvedUrl: res.request?.res?.responseUrl ?? link.href,
       html: isHtml ? body : null,
       error: null,
+      reason: describeReason(res.status, null, link.href),
     };
   } catch (err: any) {
+    const errorCode = err.code ?? err.message ?? 'Unknown error';
     return {
       status: null,
       resolvedUrl: link.href,
       html: null,
-      error: err.code ?? err.message ?? 'Unknown error',
+      error: errorCode,
+      reason: describeReason(null, errorCode, link.href),
     };
   }
 }
@@ -173,7 +237,7 @@ export async function scanPage(
   let pagesVisited = 0;
 
   // Cache de fetch: evita re-hacer HTTP al mismo string exacto de URL
-  const fetchCache = new Map<string, { status: number | null; resolvedUrl: string; html: string | null; error: string | null }>();
+  const fetchCache = new Map<string, { status: number | null; resolvedUrl: string; html: string | null; error: string | null; reason: string | null }>();
   // Páginas ya crawleadas para sub-links (evita loops infinitos)
   const enteredPages = new Set<string>();
 
@@ -233,6 +297,7 @@ export async function scanPage(
         href: link.href,
         resolvedUrl: link.href,
         status: null,
+        reason: 'URL inválida — no se pudo resolver la dirección',
         error: 'URL inválida',
         foundOn: url,
         depth: 1,
@@ -246,6 +311,7 @@ export async function scanPage(
       href: link.href,
       resolvedUrl: cached.resolvedUrl,
       status: cached.status,
+      reason: cached.reason,
       error: cached.error,
       foundOn: url,
       depth: 1,
@@ -301,6 +367,7 @@ export async function scanPage(
             href: sl.href,
             resolvedUrl: sl.href,
             status: null,
+            reason: 'URL inválida — no se pudo resolver la dirección',
             error: 'URL inválida',
             foundOn: page.href,
             depth: 2,
@@ -314,6 +381,7 @@ export async function scanPage(
           href: sl.href,
           resolvedUrl: cached.resolvedUrl,
           status: cached.status,
+          reason: cached.reason,
           error: cached.error,
           foundOn: page.href,
           depth: 2,

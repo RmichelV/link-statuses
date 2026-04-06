@@ -75,6 +75,7 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
     { header: 'Href (original)', key: 'href',       width: 65 },
     { header: 'URL resuelta',   key: 'resolvedUrl', width: 65 },
     { header: 'Status HTTP',    key: 'status',      width: 14 },
+    { header: 'Motivo',         key: 'reason',      width: 50 },
     { header: 'Error',          key: 'error',       width: 30 },
     { header: 'Encontrado en',  key: 'foundOn',     width: 65 },
     { header: 'Profundidad',    key: 'depth',       width: 14 },
@@ -106,6 +107,7 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
       link.href,
       link.resolvedUrl ?? '',
       link.status ?? 'NULL',
+      link.reason ?? '',
       link.error ?? '',
       link.foundOn,
       link.depth,
@@ -133,11 +135,7 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
   });
 
   // Auto-filtro en encabezados
-  wsAll.autoFilter = { from: 'A1', to: `G1` };
-
-  // ─────────────────────────────────────────────
-  // Hoja 3: Solo errores
-  // ─────────────────────────────────────────────
+  wsAll.autoFilter = { from: 'A1', to: `H1` };
   const wsErrors = wb.addWorksheet('Errores');
 
   colDefs.forEach((col, i) => {
@@ -166,6 +164,7 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
       link.href,
       link.resolvedUrl ?? '',
       link.status ?? 'NULL',
+      link.reason ?? '',
       link.error ?? '',
       link.foundOn,
       link.depth,
@@ -183,7 +182,7 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
     statusCell.alignment = { horizontal: 'center', vertical: 'top' };
   });
 
-  wsErrors.autoFilter = { from: 'A1', to: `G1` };
+  wsErrors.autoFilter = { from: 'A1', to: `H1` };
 
   const buffer = await wb.xlsx.writeBuffer();
   return Buffer.from(buffer);
