@@ -76,6 +76,11 @@ function isNavigableUrl(href: string): boolean {
   if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) {
     return false;
   }
+  // Skip static assets (CSS, JS, images, fonts, etc.)
+  const ext = href.split('?')[0].split('#')[0].toLowerCase();
+  if (ext.endsWith('.css') || ext.endsWith('.js')) {
+    return false;
+  }
   return true;
 }
 
@@ -95,58 +100,58 @@ const LOGIN_DOMAINS = [
 ];
 
 function describeReason(status: number | null, errorCode: string | null, url: string): string | null {
-  // 200 → sin motivo
+  // 200 → no reason
   if (status === 200) return null;
 
   const hostname = (() => { try { return new URL(url).hostname.toLowerCase(); } catch { return ''; } })();
   const isLoginSite = LOGIN_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
 
-  // Sin respuesta (status null) → describir según el error
+  // No response (status null) → describe by error code
   if (status === null) {
-    if (!errorCode) return 'Sin respuesta del servidor';
+    if (!errorCode) return 'No server response';
     const code = errorCode.toUpperCase();
-    if (code === 'ENOTFOUND') return 'Dominio no encontrado — el DNS no puede resolver esta dirección';
-    if (code === 'ETIMEDOUT' || code === 'TIMEOUT') return 'Tiempo de espera agotado — el servidor no respondió';
-    if (code === 'ECONNREFUSED') return 'Conexión rechazada — el servidor no acepta conexiones en este puerto';
-    if (code === 'ECONNRESET') return 'Conexión reiniciada — el servidor cortó la conexión abruptamente';
-    if (code === 'ECONNABORTED') return 'Conexión abortada — se excedió el tiempo límite de la solicitud';
-    if (code === 'ERR_BAD_REQUEST') return 'URL malformada o solicitud inválida';
-    if (code.includes('CERT') || code.includes('TLS') || code.includes('SSL')) return 'Error de certificado SSL/TLS — conexión segura no pudo establecerse';
-    if (code === 'EHOSTUNREACH') return 'Host inalcanzable — no se puede llegar al servidor';
-    if (code === 'ENETUNREACH') return 'Red inalcanzable — no hay ruta de red hacia el destino';
-    if (code === 'ERR_FR_TOO_MANY_REDIRECTS') return 'Demasiadas redirecciones — posible loop de redirección';
-    return `Error de conexión: ${errorCode}`;
+    if (code === 'ENOTFOUND') return 'Domain not found — DNS cannot resolve this address';
+    if (code === 'ETIMEDOUT' || code === 'TIMEOUT') return 'Connection timeout — server did not respond';
+    if (code === 'ECONNREFUSED') return 'Connection refused — server rejected the connection on this port';
+    if (code === 'ECONNRESET') return 'Connection reset — server forcibly closed the connection';
+    if (code === 'ECONNABORTED') return 'Connection aborted — request timeout exceeded';
+    if (code === 'ERR_BAD_REQUEST') return 'Malformed URL or invalid request';
+    if (code.includes('CERT') || code.includes('TLS') || code.includes('SSL')) return 'SSL/TLS certificate error — secure connection could not be established';
+    if (code === 'EHOSTUNREACH') return 'Host unreachable — cannot reach the server';
+    if (code === 'ENETUNREACH') return 'Network unreachable — no route to host';
+    if (code === 'ERR_FR_TOO_MANY_REDIRECTS') return 'Too many redirects — possible redirect loop';
+    return `Connection error: ${errorCode}`;
   }
 
-  // Redirecciones (3xx)
-  if (status === 301) return 'Redirección permanente a otra URL';
-  if (status === 302 || status === 307 || status === 308) return 'Redirección temporal a otra URL';
-  if (status >= 300 && status < 400) return `Redirección (${status})`;
+  // Redirects (3xx)
+  if (status === 301) return 'Permanently moved to another URL';
+  if (status === 302 || status === 307 || status === 308) return 'Temporarily redirected to another URL';
+  if (status >= 300 && status < 400) return `Redirect (${status})`;
 
-  // Errores del cliente (4xx)
-  if (status === 400) return 'Solicitud incorrecta (Bad Request) — el servidor no entiende la petición';
+  // Client errors (4xx)
+  if (status === 400) return 'Bad Request — server cannot understand the request';
   if (status === 401) return isLoginSite
-    ? `Requiere autenticación — ${hostname} necesita inicio de sesión para acceder a este contenido`
-    : 'Requiere autenticación (credenciales no proporcionadas)';
+    ? `Authentication required — ${hostname} requires login to access this content`
+    : 'Authentication required — credentials not provided';
   if (status === 403) return isLoginSite
-    ? `Acceso bloqueado — ${hostname} requiere inicio de sesión o bloquea el acceso automatizado`
-    : 'Acceso prohibido — el servidor rechaza la solicitud (posible bloqueo de bots o permisos insuficientes)';
-  if (status === 404) return 'Página no encontrada — la URL no existe en el servidor';
-  if (status === 405) return 'Método HTTP no permitido por el servidor';
-  if (status === 408) return 'Tiempo de espera del servidor agotado (Request Timeout)';
-  if (status === 410) return 'Recurso eliminado permanentemente — la página fue removida intencionalmente';
-  if (status === 429) return 'Demasiadas solicitudes — el servidor aplicó límite de tasa (rate limit)';
-  if (status === 451) return 'No disponible por razones legales';
-  if (status >= 400 && status < 500) return `Error del cliente (${status})`;
+    ? `Access forbidden — ${hostname} requires login or blocks automated access`
+    : 'Access forbidden — server rejected the request (possible bot blocking or insufficient permissions)';
+  if (status === 404) return 'Page not found — URL does not exist on the server';
+  if (status === 405) return 'Method not allowed — server does not support this HTTP method';
+  if (status === 408) return 'Request timeout — server timeout exceeded';
+  if (status === 410) return 'Gone — resource permanently deleted';
+  if (status === 429) return 'Too many requests — server applied rate limit';
+  if (status === 451) return 'Unavailable for legal reasons';
+  if (status >= 400 && status < 500) return `Client error (${status})`;
 
-  // Errores del servidor (5xx)
-  if (status === 500) return 'Error interno del servidor — fallo en la aplicación web';
-  if (status === 502) return 'Bad Gateway — el servidor intermediario recibió una respuesta inválida';
-  if (status === 503) return 'Servicio no disponible — el servidor está temporalmente fuera de servicio o en mantenimiento';
-  if (status === 504) return 'Gateway Timeout — el servidor intermediario no recibió respuesta a tiempo';
-  if (status >= 500) return `Error del servidor (${status})`;
+  // Server errors (5xx)
+  if (status === 500) return 'Internal Server Error — web application failure';
+  if (status === 502) return 'Bad Gateway — proxy received invalid response';
+  if (status === 503) return 'Service Unavailable — server is temporarily down or in maintenance';
+  if (status === 504) return 'Gateway Timeout — proxy did not receive timely response';
+  if (status >= 500) return `Server error (${status})`;
 
-  return `Respuesta con status ${status}`;
+  return `Response with status ${status}`;
 }
 
 export interface RawLink {
@@ -297,8 +302,8 @@ export async function scanPage(
         href: link.href,
         resolvedUrl: link.href,
         status: null,
-        reason: 'URL inválida — no se pudo resolver la dirección',
-        error: 'URL inválida',
+        reason: 'Invalid URL — could not resolve the address',
+        error: 'Invalid URL',
         foundOn: url,
         depth: 1,
       });
@@ -367,8 +372,8 @@ export async function scanPage(
             href: sl.href,
             resolvedUrl: sl.href,
             status: null,
-            reason: 'URL inválida — no se pudo resolver la dirección',
-            error: 'URL inválida',
+            reason: 'Invalid URL — could not resolve the address',
+            error: 'Invalid URL',
             foundOn: page.href,
             depth: 2,
           });

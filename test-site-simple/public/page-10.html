@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Página 10</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    nav { background-color: #f0f0f0; padding: 15px 20px; border-bottom: 2px solid #2B579A; }
+    nav p { margin: 0; font-size: 14px; }
+    main { margin: 20px; }
+    h1 { color: #2B579A; }
+    .links { margin-top: 20px; }
+    a { display: block; margin: 10px 0; color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    hr { margin-top: 30px; border: none; border-top: 1px solid #ddd; }
+    section { margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 4px solid #2B579A; }
+  </style>
+</head>
+<body>
+  <nav>
+    <p><strong>Navegación:</strong> <a href="page-1.html" style="color: #0066cc; text-decoration: none; margin: 0 8px;">1</a> | <a href="page-2.html" style="color: #0066cc; text-decoration: none; margin: 0 8px;">2</a> | <a href="page-3.html" style="color: #0066cc; text-decoration: none; margin: 0 8px;">3</a> | <a href="page-4.html" style="color: #0066cc; text-decoration: none; margin: 0 8px;">4</a> | <a href="page-5.html" style="color: #0066cc; text-decoration: none; margin: 0 8px;">5</a> | <a href="page-6.html" style="color: #0066cc; text-decoration: none; margin: 0 8px;">6</a> | <a href="page-7.html" style="color: #0066cc; text-decoration: none; margin: 0 8px;">7</a> | <a href="page-8.html" style="color: #0066cc; text-decoration: none; margin: 0 8px;">8</a> | <a href="page-9.html" style="color: #0066cc; text-decoration: none; margin: 0 8px;">9</a> | <strong style="color: #2B579A; font-weight: bold;">10</strong></p>
+  </nav>
+  
+  <main>
+    <h1>Página 10</h1>
+    <p>Esta es la página 10 de 10. Este sitio de prueba contiene páginas interconectadas para testear el scanner.</p>
+    
+    <div class="links">
+      <h2>Links principales a otras páginas:</h2>
+      <a href="page-1.html">page-1.html</a>
+      <a href="page-2.html">page-2.html</a>
+      <a href="page-3.html">page-3.html</a>
+      <a href="page-4.html">page-4.html</a>
+      <a href="page-5.html">page-5.html</a>
+    </div>
+
+    <section>
+      <h2>Anclas internas (anchors):</h2>
+      <a href="#section-content">Ir a Contenido</a>
+      <a href="#section-resources">Ir a Recursos</a>
+      <a href="#section-footer">Ir a Footer</a>
+    </section>
+
+    <section id="section-content">
+      <h3>Contenido Principal</h3>
+      <p>Esta es una sección con un ID que permite anclas internas.</p>
+      <a href="external-resource.html">Recurso Externo</a>
+    </section>
+
+    <section id="section-resources">
+      <h3>Recursos</h3>
+      <p>Enlaces a recursos:</p>
+      <a href="/api/data.json">JSON Data API</a>
+      <a href="/assets/download.zip">Descargar ZIP</a>
+    </section>
+
+    <section id="section-footer">
+      <h3>Footer</h3>
+      <a href="https://github.com/example/test-site">GitHub Repository</a>
+      <a href="https://example.com/privacy">Privacy Policy</a>
+    </section>
+    
+    <hr>
+    <p><small>© 2026 Test Site Simple</small></p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

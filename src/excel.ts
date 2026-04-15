@@ -16,9 +16,9 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
   wb.created = new Date();
 
   // ─────────────────────────────────────────────
-  // Hoja 1: Resumen
+  // Sheet 1: Summary
   // ─────────────────────────────────────────────
-  const wsSummary = wb.addWorksheet('Resumen');
+  const wsSummary = wb.addWorksheet('Summary');
 
   const headerFill = (color: string): ExcelJS.Fill => ({
     type: 'pattern', pattern: 'solid', fgColor: { argb: color },
@@ -27,25 +27,25 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
     bold, color: { argb: color }, size,
   });
 
-  // Título
+  // Title
   wsSummary.mergeCells('A1:B1');
   const titleCell = wsSummary.getCell('A1');
-  titleCell.value = '📊 Resumen del escaneo';
+  titleCell.value = '📊 Scan Summary';
   titleCell.fill  = headerFill(COLOR_HEADER_BG);
   titleCell.font  = headerFont(COLOR_HEADER_FG, 13);
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
   wsSummary.getRow(1).height = 28;
 
   const summaryRows: [string, string | number][] = [
-    ['URL analizada',          scan.url],
-    ['Título de página',       scan.pageTitle],
-    ['Fecha de escaneo',       scan.scannedAt],
-    ['Duración (ms)',          scan.durationMs],
-    ['Profundidad máx.',       scan.maxDepth],
-    ['Páginas visitadas',      scan.pagesVisited],
-    ['Total links analizados', scan.totalLinks],
-    ['Links con error/4xx',    scan.links.filter(l => l.status === null || (l.status !== null && l.status >= 400)).length],
-    ['Links OK (2xx/3xx)',     scan.links.filter(l => l.status !== null && l.status < 400).length],
+    ['Analyzed URL',          scan.url],
+    ['Page Title',            scan.pageTitle],
+    ['Scan Date',             scan.scannedAt],
+    ['Duration (ms)',         scan.durationMs],
+    ['Max Depth',             scan.maxDepth],
+    ['Pages Visited',         scan.pagesVisited],
+    ['Total Links Analyzed',  scan.totalLinks],
+    ['Links with Errors/4xx', scan.links.filter(l => l.status === null || (l.status !== null && l.status >= 400)).length],
+    ['OK Links (2xx/3xx)',    scan.links.filter(l => l.status !== null && l.status < 400).length],
   ];
 
   summaryRows.forEach(([label, value], i) => {
@@ -66,19 +66,19 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
   wsSummary.getColumn(2).width = 70;
 
   // ─────────────────────────────────────────────
-  // Hoja 2: Todos los links
+  // Sheet 2: All Links
   // ─────────────────────────────────────────────
-  const wsAll = wb.addWorksheet('Todos los links');
+  const wsAll = wb.addWorksheet('All Links');
 
   const colDefs = [
-    { header: 'Texto del link', key: 'text',        width: 35 },
-    { header: 'Href (original)', key: 'href',       width: 65 },
-    { header: 'URL resuelta',   key: 'resolvedUrl', width: 65 },
-    { header: 'Status HTTP',    key: 'status',      width: 14 },
-    { header: 'Motivo',         key: 'reason',      width: 50 },
+    { header: 'Link Text',      key: 'text',        width: 35 },
+    { header: 'Original Href',  key: 'href',       width: 65 },
+    { header: 'Resolved URL',   key: 'resolvedUrl', width: 65 },
+    { header: 'HTTP Status',    key: 'status',      width: 14 },
+    { header: 'Reason',         key: 'reason',      width: 50 },
     { header: 'Error',          key: 'error',       width: 30 },
-    { header: 'Encontrado en',  key: 'foundOn',     width: 65 },
-    { header: 'Profundidad',    key: 'depth',       width: 14 },
+    { header: 'Found On',       key: 'foundOn',     width: 65 },
+    { header: 'Depth',          key: 'depth',       width: 14 },
   ];
 
   // Encabezados
@@ -134,9 +134,9 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
     }
   });
 
-  // Auto-filtro en encabezados
+  // Auto-filter on headers
   wsAll.autoFilter = { from: 'A1', to: `H1` };
-  const wsErrors = wb.addWorksheet('Errores');
+  const wsErrors = wb.addWorksheet('Errors');
 
   colDefs.forEach((col, i) => {
     const cell = wsErrors.getCell(1, i + 1);
@@ -182,7 +182,108 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
     statusCell.alignment = { horizontal: 'center', vertical: 'top' };
   });
 
-  wsErrors.autoFilter = { from: 'A1', to: `H1` };
+  wsErrors.autoFilter = { from: 'A1', to: `H1` }; // Auto-filter on headers
+
+  // ─────────────────────────────────────────────
+  // Sheet 4: Links by Page
+  // ─────────────────────────────────────────────
+  const wsByPage = wb.addWorksheet('Links by Page');
+
+  // Group links by foundOn
+  const pageMap = new Map<string, typeof scan.links>();
+  for (const link of scan.links) {
+    const arr = pageMap.get(link.foundOn) ?? [];
+    arr.push(link);
+    pageMap.set(link.foundOn, arr);
+  }
+
+  const pageColDefs = [
+    { header: 'Link Text',     width: 35 },
+    { header: 'Original Href', width: 65 },
+    { header: 'HTTP Status',   width: 14 },
+    { header: 'Reason',        width: 50 },
+  ];
+
+  // Set column widths
+  pageColDefs.forEach((col, i) => {
+    wsByPage.getColumn(i + 1).width = col.width;
+  });
+
+  let currentRow = 1;
+
+  for (const [pageUrl, links] of pageMap) {
+    const errorCount = links.filter(l => l.status === null || (l.status !== null && l.status >= 400)).length;
+    const okCount = links.length - errorCount;
+
+    // Page header row (merged across all columns)
+    wsByPage.mergeCells(currentRow, 1, currentRow, pageColDefs.length);
+    const pageHeaderCell = wsByPage.getCell(currentRow, 1);
+    pageHeaderCell.value = `📄 ${pageUrl}`;
+    pageHeaderCell.fill  = headerFill(COLOR_HEADER_BG);
+    pageHeaderCell.font  = headerFont(COLOR_HEADER_FG, 12);
+    pageHeaderCell.alignment = { vertical: 'middle' };
+    wsByPage.getRow(currentRow).height = 24;
+    currentRow++;
+
+    // Stats row
+    wsByPage.mergeCells(currentRow, 1, currentRow, pageColDefs.length);
+    const statsCell = wsByPage.getCell(currentRow, 1);
+    statsCell.value = `Total: ${links.length}  |  OK: ${okCount}  |  Errors: ${errorCount}`;
+    statsCell.fill  = headerFill('EEF2FA');
+    statsCell.font  = { size: 10, italic: true };
+    currentRow++;
+
+    // Column headers
+    pageColDefs.forEach((col, i) => {
+      const cell = wsByPage.getCell(currentRow, i + 1);
+      cell.value     = col.header;
+      cell.fill      = headerFill('4A4A4A');
+      cell.font      = headerFont(COLOR_HEADER_FG, 10);
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border    = { bottom: { style: 'thin', color: { argb: '999999' } } };
+    });
+    currentRow++;
+
+    // Link rows
+    for (let i = 0; i < links.length; i++) {
+      const link = links[i];
+      const isError = link.status === null || (link.status !== null && link.status >= 400);
+      const altRow  = i % 2 === 0;
+      const rowBg   = isError ? COLOR_ERROR_BG : altRow ? COLOR_ROW_ALT : 'FFFFFF';
+
+      const vals = [
+        link.text,
+        link.href,
+        link.status ?? 'NULL',
+        link.reason ?? '',
+      ];
+
+      vals.forEach((val, ci) => {
+        const cell = wsByPage.getCell(currentRow, ci + 1);
+        cell.value = val;
+        cell.fill  = headerFill(rowBg);
+        cell.alignment = { vertical: 'top', wrapText: false };
+      });
+
+      // Status color
+      const statusCell = wsByPage.getCell(currentRow, 3);
+      statusCell.alignment = { horizontal: 'center', vertical: 'top' };
+      if (link.status === null) {
+        statusCell.font = headerFont(COLOR_ERROR_FG, 10, true);
+      } else if (link.status >= 400) {
+        statusCell.font = headerFont(COLOR_ERROR_FG, 10, true);
+      } else if (link.status >= 300) {
+        statusCell.font = headerFont(COLOR_WARN_FG, 10, false);
+      } else {
+        statusCell.font = headerFont(COLOR_OK_FG, 10, false);
+      }
+
+      currentRow++;
+    }
+
+    // Blank separator row
+    currentRow++;
+  }
 
   const buffer = await wb.xlsx.writeBuffer();
   return Buffer.from(buffer);
