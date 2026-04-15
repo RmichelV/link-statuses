@@ -19,10 +19,18 @@ export interface SectionResult {
   links: SectionLink[];
 }
 
+export interface SubPageResult {
+  navLinkText: string;
+  navLinkHref: string;
+  pageTitle: string;
+  links: SectionLink[];
+}
+
 export interface ScanResult {
   url: string;
   pageTitle: string;
   sections: SectionResult[];
+  subPages: SubPageResult[];
   scannedAt: string;
   durationMs: number;
   totalLinks: number;
@@ -152,6 +160,75 @@ function extractLinksFromSection(
   return links;
 }
 
+// ─── PAQ-style cleanup selectors ─────────────────────────
+
+const CLEANUP_SELECTORS = [
+  // Inventory / search / forms
+  "[data-name^='inventory-search-results-page-filters-sort-']",
+  "[data-name^='inventory-search-results-facets-']",
+  '#inventory-results1-app-root',
+  '#inventory-search1-app-root',
+  '#inventory-filters1-app-root',
+  '#inventory-facets1-app-root',
+  '#kbb-leaddriver-search',
+  "[data-name^='form-centered']",
+  "[data-widget-name='contact-form']",
+  "[data-name^='map-hours']",
+  "[data-name='map-1']",
+  "[data-widget-name='map-dynamic']",
+  '.facetmulti.BLANK',
+  '#compareForm',
+  '.ws-inv-text-search',
+  '.ws-inv-filters',
+  '.ws-inv-facets',
+  '.srp-wrapper-facets',
+  // Header / footer / nav / banners / chat
+  'header', 'footer',
+  '.global-header', '.global-footer',
+  '.site-header', '.site-footer',
+  '.ddc-header', '.ddc-footer',
+  'nav', '.primary-nav', '.site-nav', '.header-navigation',
+  '.breadcrumbs', '.bread-crumbs', '.topbar', '.sitewide-bar',
+  '.cookie-banner', '#onetrust-banner-sdk',
+  '[role="dialog"][aria-label*="cookie"]',
+  '.notification-banner', '.promo-banner',
+  '[data-widget-name="chat"]', '.chat-widget',
+  '.ws-hours', '.ws-social', '.ws-share',
+];
+
+/**
+ * Limpieza estilo paq: aisla .ddc-wrapper, elimina todos los selectores de
+ * UI/nav/footer/inventario/chat, y devuelve los <a href> que quedan.
+ */
+function extractCleanedLinks(
+  html: string,
+  baseUrl: string,
+): SectionLink[] {
+  const $ = cheerio.load(html);
+  const wrapper = $('.ddc-wrapper');
+  if (wrapper.length === 0) return [];
+
+  // Remove all cleanup selectors inside the wrapper
+  for (const sel of CLEANUP_SELECTORS) {
+    wrapper.find(sel).remove();
+  }
+
+  // Extract remaining links from the cleaned wrapper
+  const links: SectionLink[] = [];
+  wrapper.find('a[href]').each((_, el) => {
+    const $el = $(el);
+    const rawHref = $el.attr('href')?.trim();
+    if (!rawHref || !isNavigableUrl(rawHref)) return;
+
+    const text = $el.text().trim() || $el.attr('title')?.trim() || rawHref;
+    const href = resolveHref(baseUrl, rawHref);
+
+    links.push({ text, href, status: null, reason: null, error: null });
+  });
+
+  return links;
+}
+
 // ─── HTTP status check ───────────────────────────────────
 
 async function checkStatus(
@@ -176,6 +253,107 @@ async function checkStatus(
   }
 }
 
+// ─── Section definitions ─────────────────────────────────
+
+const SECTION_DEFS: { name: string; selector: string; exclude?: string[] }[] = [
+  { name: 'Navigation', selector: '.header-navigation' },
+  { name: 'Footer', selector: '.ddc-footer' },
+  { name: 'DDC Wrapper', selector: '.ddc-wrapper', exclude: ['.header-navigation', '.ddc-footer'] },
+];
+
+/** Extract links from all 3 sections of a parsed HTML page */
+function extractAllSections($: cheerio.CheerioAPI, baseUrl: string): SectionResult[] {
+  const sections: SectionResult[] = [];
+  for (const def of SECTION_DEFS) {
+    const links = extractLinksFromSection($, def.selector, baseUrl, def.exclude);
+    if ($(def.selector).length === 0) {
+      console.log(`      ⚠️  "${def.name}" not found (${def.selector})`);
+    } else {
+      console.log(`      📦 ${def.name}: ${links.length} links`);
+    }
+    sections.push({ section: def.name, links });
+  }
+  return sections;
+}
+
+/** Check HTTP status of every unique URL across all sections, using a shared cache */
+async function resolveStatuses(
+  sections: SectionResult[],
+  statusCache: Map<string, { status: number | null; error: string | null; reason: string | null }>,
+  client: AxiosInstance,
+  referer: string,
+  limit: <T>(fn: () => Promise<T>) => Promise<T>,
+  delayMin: number,
+  delayMax: number,
+): Promise<void> {
+  const allLinks = sections.flatMap(s => s.links);
+  const newUrls = [...new Set(allLinks.map(l => l.href))].filter(u => !statusCache.has(u));
+
+  if (newUrls.length > 0) {
+    let done = 0;
+    await Promise.all(
+      newUrls.map(href =>
+        limit(async () => {
+          const result = await checkStatus(client, href, referer, delayMin, delayMax);
+          statusCache.set(href, result);
+          done++;
+          const icon = result.status === null ? '❌' : result.status >= 400 ? '⚠️' : '✅';
+          console.log(`      ${icon} [${done}/${newUrls.length}] ${result.status ?? 'ERR'} → ${href}`);
+        }),
+      ),
+    );
+  }
+
+  // Apply cached statuses
+  for (const section of sections) {
+    for (const link of section.links) {
+      const cached = statusCache.get(link.href);
+      if (cached) {
+        link.status = cached.status;
+        link.error = cached.error;
+        link.reason = cached.reason;
+      }
+    }
+  }
+}
+
+/** Check HTTP status for a flat array of links, using shared cache */
+async function resolveStatusesFlat(
+  links: SectionLink[],
+  statusCache: Map<string, { status: number | null; error: string | null; reason: string | null }>,
+  client: AxiosInstance,
+  referer: string,
+  limit: <T>(fn: () => Promise<T>) => Promise<T>,
+  delayMin: number,
+  delayMax: number,
+): Promise<void> {
+  const newUrls = [...new Set(links.map(l => l.href))].filter(u => !statusCache.has(u));
+
+  if (newUrls.length > 0) {
+    let done = 0;
+    await Promise.all(
+      newUrls.map(href =>
+        limit(async () => {
+          const result = await checkStatus(client, href, referer, delayMin, delayMax);
+          statusCache.set(href, result);
+          done++;
+          const icon = result.status === null ? '❌' : result.status >= 400 ? '⚠️' : '✅';
+          console.log(`      ${icon} [${done}/${newUrls.length}] ${result.status ?? 'ERR'} → ${href}`);
+        }),
+      ),
+    );
+  }
+
+  for (const link of links) {
+    const cached = statusCache.get(link.href);
+    if (cached) {
+      link.status = cached.status;
+      link.error = cached.error;
+      link.reason = cached.reason;
+    }
+  }
+}
+
 // ─── Main scan ───────────────────────────────────────────
 
 export async function scanPage(
@@ -190,10 +368,13 @@ export async function scanPage(
   const pLimit = (await import('p-limit')).default;
   const limit = pLimit(concurrency);
 
+  // Shared status cache across home + all sub-pages
+  const statusCache = new Map<string, { status: number | null; error: string | null; reason: string | null }>();
+
   console.log(`\n🔍 [SCAN] Starting: ${url}`);
   console.log(`   Concurrency: ${concurrency} | Delay: ${delayMin}-${delayMax}ms`);
 
-  // Fetch main page
+  // ── HOME PAGE ──────────────────────────────
   const pageRes = await client.get(url, {
     headers: buildBrowserHeaders(),
     responseType: 'text',
@@ -202,71 +383,84 @@ export async function scanPage(
   const $ = cheerio.load(html);
   const pageTitle = $('title').first().text().trim() || '(no title)';
 
-  console.log(`   ✅ Page loaded: "${pageTitle}"`);
+  console.log(`   ✅ Home loaded: "${pageTitle}"`);
+  console.log(`   📄 Extracting home sections...`);
 
-  // Define sections to analyze
-  const sectionDefs: { name: string; selector: string; exclude?: string[] }[] = [
-    { name: 'Navigation', selector: '.header-navigation' },
-    { name: 'Footer', selector: '.ddc-footer' },
-    { name: 'DDC Wrapper', selector: '.ddc-wrapper', exclude: ['.header-navigation', '.ddc-footer'] },
-  ];
+  const sections = extractAllSections($, url);
 
-  const sections: SectionResult[] = [];
+  console.log(`\n📡 Checking home URLs...`);
+  await resolveStatuses(sections, statusCache, client, url, limit, delayMin, delayMax);
 
-  for (const def of sectionDefs) {
-    const links = extractLinksFromSection($, def.selector, url, def.exclude);
-    if ($(def.selector).length === 0) {
-      console.log(`   ⚠️  "${def.name}" not found (${def.selector})`);
-    } else {
-      console.log(`   📦 ${def.name}: ${links.length} links`);
+  // ── SUB-PAGES (visit each nav link) ────────
+  const navSection = sections.find(s => s.section === 'Navigation');
+  const navLinks = navSection?.links ?? [];
+  const subPages: SubPageResult[] = [];
+
+  // Deduplicate nav links by href (keep first occurrence text)
+  const visitedNavHrefs = new Set<string>();
+
+  console.log(`\n📂 [SUB-PAGES] Visiting ${navLinks.length} nav links...`);
+
+  for (let i = 0; i < navLinks.length; i++) {
+    const navLink = navLinks[i];
+
+    // Skip already visited or same as home
+    if (visitedNavHrefs.has(navLink.href)) continue;
+    if (navLink.href === url) continue;
+    visitedNavHrefs.add(navLink.href);
+
+    console.log(`\n   🔗 [${i + 1}/${navLinks.length}] "${navLink.text}" → ${navLink.href}`);
+
+    try {
+      const subRes = await client.get(navLink.href, {
+        headers: buildBrowserHeaders(url),
+        responseType: 'text',
+        timeout: 15_000,
+      });
+      const subHtml = typeof subRes.data === 'string' ? subRes.data : String(subRes.data);
+      const sub$ = cheerio.load(subHtml);
+      const subTitle = sub$('title').first().text().trim() || '(no title)';
+
+      console.log(`      ✅ Loaded: "${subTitle}"`);
+      console.log(`      🧹 Cleaning (isolate .ddc-wrapper, remove UI elements)...`);
+
+      const cleanedLinks = extractCleanedLinks(subHtml, navLink.href);
+      console.log(`      📦 Links after cleanup: ${cleanedLinks.length}`);
+
+      console.log(`      📡 Checking URLs...`);
+      await resolveStatusesFlat(cleanedLinks, statusCache, client, navLink.href, limit, delayMin, delayMax);
+
+      subPages.push({
+        navLinkText: navLink.text,
+        navLinkHref: navLink.href,
+        pageTitle: subTitle,
+        links: cleanedLinks,
+      });
+    } catch (err: any) {
+      console.log(`      ❌ Failed to load: ${err.code ?? err.message}`);
+      subPages.push({
+        navLinkText: navLink.text,
+        navLinkHref: navLink.href,
+        pageTitle: '(failed to load)',
+        links: [],
+      });
     }
-    sections.push({ section: def.name, links });
   }
 
-  // Collect unique URLs across all sections and check HTTP statuses
-  const allLinks = sections.flatMap(s => s.links);
-  const uniqueUrls = [...new Set(allLinks.map(l => l.href))];
-
-  console.log(`\n📡 Checking ${uniqueUrls.length} unique URLs...`);
-
-  const statusCache = new Map<string, { status: number | null; error: string | null; reason: string | null }>();
-  let done = 0;
-
-  await Promise.all(
-    uniqueUrls.map(href =>
-      limit(async () => {
-        const result = await checkStatus(client, href, url, delayMin, delayMax);
-        statusCache.set(href, result);
-        done++;
-        const icon = result.status === null ? '❌' : result.status >= 400 ? '⚠️' : '✅';
-        console.log(`   ${icon} [${done}/${uniqueUrls.length}] ${result.status ?? 'ERR'} → ${href}`);
-      }),
-    ),
-  );
-
-  // Apply cached statuses to every link
-  for (const section of sections) {
-    for (const link of section.links) {
-      const cached = statusCache.get(link.href);
-      if (cached) {
-        link.status = cached.status;
-        link.error = cached.error;
-        link.reason = cached.reason;
-      }
-    }
-  }
-
-  const totalLinks = allLinks.length;
-  const errors = allLinks.filter(l => l.status === null || (l.status !== null && l.status >= 400)).length;
+  // ── Summary ────────────────────────────────
+  const homeLinks = sections.flatMap(s => s.links).length;
+  const subLinksTotal = subPages.reduce((sum, p) => sum + p.links.length, 0);
+  const totalLinks = homeLinks + subLinksTotal;
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
   console.log(`\n✅ [SCAN COMPLETE] ${elapsed}s`);
-  console.log(`   Total links: ${totalLinks} | Errors: ${errors}\n`);
+  console.log(`   Home links: ${homeLinks} | Sub-page links: ${subLinksTotal} | Total: ${totalLinks}\n`);
 
   return {
     url,
     pageTitle,
     sections,
+    subPages,
     scannedAt: new Date().toISOString(),
     durationMs: Date.now() - start,
     totalLinks,
