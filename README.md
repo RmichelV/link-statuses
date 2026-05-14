@@ -1,18 +1,18 @@
 # Link Status Scanner
 
-API REST que analiza todos los links de un sitio web, reporta su estado HTTP real (200, 404, null, etc.) y al finalizar genera automáticamente un archivo Excel con los resultados.
+REST API that audits website links, reports real HTTP status codes (200, 404, null, etc.), and automatically generates an Excel report when the scan finishes.
 
 ---
 
-## Requisitos previos
+## Prerequisites
 
-Antes de comenzar asegúrate de tener instalado:
+Make sure you have the following installed:
 
-- [Node.js](https://nodejs.org/) v18 o superior
-- npm (incluido con Node.js)
+- [Node.js](https://nodejs.org/) v18+
+- npm (bundled with Node.js)
 - Git
 
-Verifica con:
+Check versions:
 
 ```bash
 node -v
@@ -22,7 +22,7 @@ git --version
 
 ---
 
-## 1. Clonar el repositorio
+## 1. Clone The Repository
 
 ```bash
 git clone https://github.com/RmichelV/link-statuses.git
@@ -31,53 +31,54 @@ cd link-statuses
 
 ---
 
-## 2. Instalar dependencias
+## 2. Install Dependencies
 
 ```bash
 npm install
 ```
 
-Esto instala todo lo necesario: Express, Axios, Cheerio, ExcelJS, tsx, TypeScript, etc.
+This installs all required packages (Express, Axios, Cheerio, ExcelJS, tsx, TypeScript, etc.).
 
 ---
 
-## 3. Iniciar el servidor
+## 3. Run Locally (Development Only)
 
-### Modo desarrollo (recomendado — reinicia automáticamente al guardar cambios)
+Use development mode only:
 
 ```bash
 npm run dev
 ```
 
-### Modo producción
+The API will run at:
 
-```bash
-npm start
+```text
+http://localhost:3000
 ```
 
-Al iniciar verás en la terminal:
-
-```
-Link Reader API corriendo en http://localhost:3000
-```
-
-El servidor queda escuchando en **http://localhost:3000**. No cierres esta terminal — aquí verás el progreso del escaneo en tiempo real.
+Keep this terminal open to see real-time scan progress.
 
 ---
 
-## 4. Realizar un escaneo
+## 4. Start A Scan (POST /api/scan)
 
-### Opción A — Thunder Client (extensión de VS Code)
+Use Thunder Client, Postman, or curl.
 
-1. Abre VS Code → instala la extensión **Thunder Client**.
-2. Crea una nueva request:
-   - **Method:** `POST`
-   - **URL:** `http://localhost:3000/api/scan`
-   - **Body → JSON:**
+### Required Request Headers
+
+- `Content-Type: application/json`
+- `Accept: application/json`
+
+### Request URL
+
+```text
+http://localhost:3000/api/scan
+```
+
+### Request Body (use this payload)
 
 ```json
 {
-  "url": "https://www.ejemplo.com",
+  "url": "URL",
   "concurrency": 5,
   "delayMin": 300,
   "delayMax": 1500,
@@ -85,8 +86,7 @@ El servidor queda escuchando en **http://localhost:3000**. No cierres esta termi
 }
 ```
 
-3. Haz clic en **Send**.
-4. Recibirás una respuesta con el `id` del escaneo:
+Example response:
 
 ```json
 {
@@ -95,141 +95,52 @@ El servidor queda escuchando en **http://localhost:3000**. No cierres esta termi
 }
 ```
 
----
-
-### Opción B — Postman
-
-1. Abre Postman → nueva request.
-2. Configura igual que en Thunder Client (POST, URL y body JSON arriba).
-3. Haz clic en **Send**.
+> Note: `maxDepth` is included in this payload format for compatibility with previous requests.
 
 ---
 
-## 5. Consultar el estado del escaneo
+## 5. Excel Output
 
-Crea una segunda request:
+When the scan finishes, an `.xlsx` file is automatically generated (and opened) in the project root:
 
-- **Method:** `GET`
-- **URL:** `http://localhost:3000/api/scan/<id>`
-
-Reemplaza `<id>` con el valor recibido en el paso anterior.
-
-Respuesta mientras está en curso:
-
-```json
-{
-  "id": "abc123-...",
-  "status": "running"
-}
+```text
+scan-<domain>-<date>.xlsx
 ```
 
-Respuesta al terminar:
+Current workbook includes:
 
-```json
-{
-  "id": "abc123-...",
-  "status": "done",
-  "data": { ... }
-}
-```
+- `Summary`
+- `Home`
+- `Sub-Pages` (all nav-analyzed pages grouped by heading)
+- `Errors` (all links with status different from 200)
 
----
+You can also download it manually:
 
-## 6. Resultados en la terminal
-
-Mientras el escaneo está en curso, la terminal del servidor muestra el progreso link por link:
-
-```
-🔍 [SCAN] Iniciando: https://www.ejemplo.com
-   Concurrencia: 5 | Delay: 300-1500ms | Profundidad: 2
-   Cargando página raíz...
-   ✅ Página raíz cargada: "Ejemplo - Inicio"
-   🔗 Links encontrados en raíz: 87
-
-📡 [Depth 1] Fetching 87 URLs únicas...
-   ✅ [1/87] 200 → https://www.ejemplo.com/nosotros
-   ⚠️ [2/87] 404 → https://www.ejemplo.com/pagina-rota
-   ❌ [3/87] NULL → https://sitio-que-no-existe.com
-
-✅ [SCAN COMPLETADO] 94.2s
-   Total links: 312 | Errores/4xx: 8 | Páginas visitadas: 14
-
-📥 Excel guardado: C:\...\link-statuses\scan-www-ejemplo-com-2026-04-03.xlsx
-```
-
-**Iconos:**
-| Ícono | Significado |
-|-------|-------------|
-| ✅ | Link OK (2xx) |
-| ⚠️ | Error del cliente/servidor (4xx / 5xx) |
-| ❌ | Sin respuesta — URL inválida, DNS no encontrado, timeout |
+- Method: `GET`
+- URL: `http://localhost:3000/api/scan/<id>/export`
 
 ---
 
-## 7. Archivo Excel generado automáticamente
-
-Al terminar el escaneo, se genera y **abre automáticamente** un archivo `.xlsx` en la raíz del proyecto con el nombre:
-
-```
-scan-<dominio>-<fecha>.xlsx
-```
-
-El archivo contiene 3 hojas:
-
-| Hoja | Contenido |
-|------|-----------|
-| **Resumen** | URL analizada, título, fecha, duración, totales |
-| **Todos los links** | Href original, URL resuelta, status HTTP, texto, página donde fue encontrado, profundidad |
-| **Errores** | Solo los links con status 4xx, 5xx o sin respuesta (null) |
-
----
-
-## 8. Descargar el Excel manualmente (opcional)
-
-También puedes descargarlo desde Thunder Client o Postman:
-
-- **Method:** `GET`
-- **URL:** `http://localhost:3000/api/scan/<id>/export`
-
-En Thunder Client: clic en **Save Response** para guardar el archivo.
-
----
-
-## Parámetros del body
-
-| Campo | Tipo | Default | Descripción |
-|-------|------|---------|-------------|
-| `url` | string | **requerido** | URL del sitio a analizar (debe iniciar con `http://` o `https://`) |
-| `concurrency` | number | `5` | Cantidad de requests simultáneos |
-| `delayMin` | number | `300` | Delay mínimo entre requests (ms) |
-| `delayMax` | number | `1500` | Delay máximo entre requests (ms) |
-| `maxDepth` | number | `2` | Profundidad de rastreo (1 = solo links del index, 2 = links de links, etc.) |
-
-> **Nota:** A mayor `maxDepth` y menor `delayMin`, el escaneo será más rápido pero más agresivo. En sitios reales se recomienda `concurrency: 5`, `delayMin: 300`.
-
----
-
-## Scripts disponibles
+## Available Scripts
 
 ```bash
-npm run dev     # Modo desarrollo con recarga automática
-npm start       # Modo producción
-npm run build   # Compila TypeScript a JavaScript (carpeta dist/)
+npm run dev     # Local development (watch mode)
+npm run build   # Compile TypeScript to dist/
 ```
 
 ---
 
-## Estructura del proyecto
+## Project Structure
 
-```
+```text
 link-statuses/
 ├── src/
-│   ├── bootstrap.ts   # Punto de entrada
-│   ├── server.ts      # Configuración de Express
-│   ├── routes.ts      # Endpoints de la API
-│   ├── scanner.ts     # Lógica de rastreo de links
-│   ├── excel.ts       # Generación del archivo Excel
-│   └── stealth.ts     # Headers y delays anti-bloqueo
+│   ├── bootstrap.ts
+│   ├── server.ts
+│   ├── routes.ts
+│   ├── scanner.ts
+│   ├── excel.ts
+│   └── stealth.ts
 ├── package.json
 ├── tsconfig.json
 └── README.md
