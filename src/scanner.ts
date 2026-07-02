@@ -265,8 +265,14 @@ const SECTION_DEFS: { name: string; selector: string; exclude?: string[] }[] = [
 function extractAllSections($: cheerio.CheerioAPI, baseUrl: string): SectionResult[] {
   const sections: SectionResult[] = [];
   for (const def of SECTION_DEFS) {
-    const links = extractLinksFromSection($, def.selector, baseUrl, def.exclude);
-    if ($(def.selector).length === 0) {
+    let selectorToUse = def.selector;
+    if (def.name === 'Navigation' && $(def.selector).length === 0 && $('.navbar-nav').length > 0) {
+      selectorToUse = '.navbar-nav';
+      console.log(`      ℹ️  "${def.name}" fallback selector in use (${selectorToUse})`);
+    }
+
+    const links = extractLinksFromSection($, selectorToUse, baseUrl, def.exclude);
+    if ($(selectorToUse).length === 0) {
       console.log(`      ⚠️  "${def.name}" not found (${def.selector})`);
     } else {
       console.log(`      📦 ${def.name}: ${links.length} links`);
