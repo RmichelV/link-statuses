@@ -48,7 +48,11 @@ router.post('/scan', (req: Request, res: Response): void => {
         const hostname = new URL(result.url).hostname.replace(/[^a-z0-9]/gi, '-');
         const date = new Date().toISOString().slice(0, 10);
         const filename = `scan-${hostname}-${date}.xlsx`;
-        const outputPath = path.resolve(process.cwd(), filename);
+        const downloadsDir = path.resolve(process.env.USERPROFILE ?? process.cwd(), 'Downloads');
+        if (!fs.existsSync(downloadsDir)) {
+          fs.mkdirSync(downloadsDir, { recursive: true });
+        }
+        const outputPath = path.join(downloadsDir, filename);
         fs.writeFileSync(outputPath, buffer);
         console.log(`\n📥 Excel guardado: ${outputPath}`);
         // Abrir automáticamente con la app predeterminada (Excel en Windows)

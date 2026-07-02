@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Link Reader</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 48px 16px 64px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #f8fafc;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      margin-top: 8px;
+      color: #94a3b8;
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 32px 28px;
+      width: 100%;
+      max-width: 640px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    input[type="url"] {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #f1f5f9;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    input[type="url"]:focus {
+      border-color: #3b82f6;
+    }
+
+    input[type="url"]::placeholder { color: #475569; }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 12px 20px;
+      transition: background .2s, transform .1s;
+    }
+
+    button:active { transform: scale(0.97); }
+
+    #btn-scan {
+      background: #3b82f6;
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    #btn-scan:hover { background: #2563eb; }
+    #btn-scan:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+
+    #btn-download {
+      display: none;
+      width: 100%;
+      margin-top: 14px;
+      background: #16a34a;
+      color: #fff;
+      padding: 13px;
+      font-size: 0.95rem;
+    }
+
+    #btn-download:hover { background: #15803d; }
+
+    /* Status bar */
+    #status-bar {
+      display: none;
+      margin-top: 20px;
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+
+    #status-bar.running {
+      background: #1e3a5f;
+      border: 1px solid #3b82f6;
+      color: #93c5fd;
+    }
+
+    #status-bar.done {
+      background: #14532d;
+      border: 1px solid #16a34a;
+      color: #86efac;
+    }
+
+    #status-bar.error {
+      background: #450a0a;
+      border: 1px solid #dc2626;
+      color: #fca5a5;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #93c5fd;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Results summary */
+    #results {
+      display: none;
+      margin-top: 20px;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .stat-box {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+
+    .stat-box .value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .stat-box .label {
+      font-size: 0.78rem;
+      color: #64748b;
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .stat-box.error-stat .value { color: #f87171; }
+    .stat-box.ok-stat .value    { color: #4ade80; }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #334155;
+      margin: 22px 0;
+    }
+
+    .section-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🔗 Link Reader</h1>
+    <p>Enter a URL to scan its navigation links and generate an Excel report</p>
+  </header>
+
+  <div class="card">
+    <label for="url-input">Website URL</label>
+    <div class="input-row">
+      <input
+        type="url"
+        id="url-input"
+        placeholder="https://www.example.com/"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button id="btn-scan">Scan</button>
+    </div>
+
+    <div id="status-bar"></div>
+
+    <div id="results">
+      <hr class="divider" />
+      <div class="section-title">Scan Results</div>
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="value" id="stat-total">—</div>
+          <div class="label">Total Links</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="stat-pages">—</div>
+          <div class="label">Sub-Pages</div>
+        </div>
+        <div class="stat-box ok-stat">
+          <div class="value" id="stat-ok">—</div>
+          <div class="label">OK Links</div>
+        </div>
+        <div class="stat-box error-stat">
+          <div class="value" id="stat-errors">—</div>
+          <div class="label">Errors</div>
+        </div>
+        <div class="stat-box" style="grid-column: span 2">
+          <div class="value" id="stat-duration">—</div>
+          <div class="label">Duration (s)</div>
+        </div>
+      </div>
+    </div>
+
+    <button id="btn-download">⬇ Download Excel Report</button>
+  </div>
+
+  <script>
+    const btnScan     = document.getElementById('btn-scan');
+    const btnDownload = document.getElementById('btn-download');
+    const urlInput    = document.getElementById('url-input');
+    const statusBar   = document.getElementById('status-bar');
+    const resultsDiv  = document.getElementById('results');
+
+    let currentScanId = null;
+    let pollTimer     = null;
+
+    function setStatus(type, html) {
+      statusBar.className   = `status-bar ${type}`;
+      statusBar.innerHTML   = html;
+      statusBar.style.display = 'block';
+    }
+
+    function reset() {
+      clearInterval(pollTimer);
+      currentScanId       = null;
+      btnDownload.style.display = 'none';
+      resultsDiv.style.display  = 'none';
+      statusBar.style.display   = 'none';
+    }
+
+    btnScan.addEventListener('click', async () => {
+      const url = urlInput.value.trim();
+      if (!url) { urlInput.focus(); return; }
+
+      reset();
+      btnScan.disabled = true;
+      setStatus('running', '<span class="spinner"></span> Starting scan…');
+
+      try {
+        const res = await fetch('/api/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ url, concurrency: 5, delayMin: 300, delayMax: 1500 }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+
+        const { id } = await res.json();
+        currentScanId = id;
+        poll(id);
+      } catch (err) {
+        setStatus('error', `❌ ${err.message}`);
+        btnScan.disabled = false;
+      }
+    });
+
+    function poll(id) {
+      let dots = 0;
+      pollTimer = setInterval(async () => {
+        try {
+          const res  = await fetch(`/api/scan/${id}`);
+          const data = await res.json();
+
+          if (data.status === 'running') {
+            dots = (dots + 1) % 4;
+            setStatus('running', `<span class="spinner"></span> Scanning${'.'.repeat(dots)}`);
+            return;
+          }
+
+          clearInterval(pollTimer);
+
+          if (data.status === 'error') {
+            setStatus('error', `❌ Scan failed: ${data.error || 'Unknown error'}`);
+            btnScan.disabled = false;
+            return;
+          }
+
+          // done
+          const d = data.data;
+          const allHomeLinks = d.sections.flatMap(s => s.links);
+          const allSubLinks  = d.subPages.flatMap(p => p.links);
+          const allLinks     = [...allHomeLinks, ...allSubLinks];
+          const errCount     = allLinks.filter(l => l.status !== 200).length;
+          const okCount      = allLinks.length - errCount;
+
+          document.getElementById('stat-total').textContent    = allLinks.length;
+          document.getElementById('stat-pages').textContent    = d.subPages.length;
+          document.getElementById('stat-ok').textContent       = okCount;
+          document.getElementById('stat-errors').textContent   = errCount;
+          document.getElementById('stat-duration').textContent = (d.durationMs / 1000).toFixed(2) + ' s';
+
+          resultsDiv.style.display  = 'block';
+          btnDownload.style.display = 'block';
+          setStatus('done', '✅ Scan complete — Excel saved to your Downloads folder');
+          btnScan.disabled = false;
+
+        } catch (e) {
+          clearInterval(pollTimer);
+          setStatus('error', `❌ Polling error: ${e.message}`);
+          btnScan.disabled = false;
+        }
+      }, 3000);
+    }
+
+    btnDownload.addEventListener('click', () => {
+      if (!currentScanId) return;
+      window.location.href = `/api/scan/${currentScanId}/export`;
+    });
+
+    // Allow Enter key to trigger scan
+    urlInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') btnScan.click();
+    });
+  </script>
+
+</body>
+</html>

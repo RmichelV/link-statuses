@@ -170,11 +170,13 @@ export async function buildExcel(scan: ScanResult): Promise<Buffer> {
   const allHomeLinks = scan.sections.flatMap(s => s.links);
   const homeErrors = allHomeLinks.filter(l => l.status === null || (l.status !== null && l.status >= 400)).length;
 
+  const durationSeconds = (scan.durationMs / 1000).toFixed(2);
+
   const summaryRows: [string, string | number][] = [
     ['Analyzed URL',    scan.url],
     ['Page Title',      scan.pageTitle],
     ['Scan Date',       scan.scannedAt],
-    ['Duration (ms)',   scan.durationMs],
+    ['Duration (s)',    durationSeconds],
     ['Total Links',     scan.totalLinks],
     ['Home Links',      allHomeLinks.length],
     ['Home Errors',     homeErrors],
