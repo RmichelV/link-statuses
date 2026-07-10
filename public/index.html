@@ -43,7 +43,7 @@
       border-radius: 14px;
       padding: 32px 28px;
       width: 100%;
-      max-width: 640px;
+      max-width: 100%;
     }
 
     label {
@@ -205,6 +205,166 @@
       letter-spacing: 0.05em;
       margin-bottom: 12px;
     }
+
+    #btn-errors {
+      display: none;
+      width: 100%;
+      margin-top: 10px;
+      background: #7f1d1d;
+      color: #fca5a5;
+      padding: 13px;
+      font-size: 0.95rem;
+    }
+
+    #btn-errors:hover { background: #991b1b; }
+
+    #error-list {
+      display: none;
+      margin-top: 20px;
+      border-radius: 10px;
+      border: 1px solid #7f1d1d;
+      overflow: hidden;
+    }
+
+    #error-list .error-list-header {
+      background: #7f1d1d;
+      padding: 12px 16px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #fca5a5;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #error-list .error-list-header button {
+      background: transparent;
+      color: #fca5a5;
+      font-size: 1rem;
+      padding: 0 6px;
+      border-radius: 4px;
+    }
+
+    #error-list .error-list-header button:hover { background: #991b1b; }
+
+    #btn-save-changes {
+      background: #1e3a5f !important;
+      color: #93c5fd !important;
+      font-size: 0.78rem !important;
+      padding: 3px 10px !important;
+      border: 1px solid #3b82f6 !important;
+      border-radius: 5px !important;
+    }
+
+    #btn-save-changes:hover { background: #1d4ed8 !important; }
+    #btn-save-changes:disabled { opacity: 0.5; cursor: not-allowed !important; }
+
+    #error-table-wrap {
+      overflow-x: auto;
+      max-height: 380px;
+      overflow-y: auto;
+    }
+
+    #error-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    #error-table thead th {
+      position: sticky;
+      top: 0;
+      background: #1e293b;
+      color: #94a3b8;
+      font-weight: 600;
+      text-align: left;
+      padding: 9px 12px;
+      border-bottom: 1px solid #334155;
+      white-space: nowrap;
+    }
+
+    #error-table tbody tr:nth-child(even) { background: #0f172a; }
+    #error-table tbody tr:nth-child(odd)  { background: #1a2436; }
+
+    #error-table tbody td {
+      padding: 8px 12px;
+      vertical-align: top;
+      border-bottom: 1px solid #1e293b;
+      word-break: break-all;
+    }
+
+    #error-table .td-reason[contenteditable] {
+      outline: none;
+      cursor: text;
+      border-radius: 4px;
+      transition: background .15s;
+    }
+
+    #error-table .td-reason[contenteditable]:hover  { background: #1e3a5f; }
+    #error-table .td-reason[contenteditable]:focus  { background: #1e3a5f; box-shadow: inset 0 0 0 1px #3b82f6; }
+
+    .save-indicator {
+      font-size: 0.7rem;
+      color: #4ade80;
+      margin-left: 6px;
+      opacity: 0;
+      transition: opacity .3s;
+    }
+
+    .save-indicator.show { opacity: 1; }
+
+    #error-table .td-status {
+      font-weight: 700;
+      color: #f87171;
+      white-space: nowrap;
+    }
+
+    #error-table .td-status.overridden {
+      color: #4ade80;
+      text-decoration: line-through;
+    }
+
+    #error-table .td-source {
+      color: #64748b;
+      white-space: nowrap;
+    }
+
+    /* Toggle switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 38px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: #dc2626;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background .25s;
+    }
+
+    .slider::before {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      left: 3px;
+      top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .25s;
+    }
+
+    .switch input:checked + .slider { background: #16a34a; }
+    .switch input:checked + .slider::before { transform: translateX(18px); }
   </style>
 </head>
 <body>
@@ -256,15 +416,47 @@
       </div>
     </div>
 
+    <button id="btn-errors">⚠️ View Error Links</button>
     <button id="btn-download">⬇ Download Excel Report</button>
+
+    <div id="error-list">
+      <div class="error-list-header">
+        <span id="error-list-title">Error Links</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="btn-save-changes" title="Save all reason edits">💾 Save changes</button>
+          <button id="btn-close-errors" title="Close">✕</button>
+        </div>
+      </div>
+      <div id="error-table-wrap">
+        <table id="error-table">
+          <thead>
+            <tr>
+              <th>OK</th>
+              <th>Source Page</th>
+              <th>Link Text</th>
+              <th>URL</th>
+              <th>Status</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="error-tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script>
-    const btnScan     = document.getElementById('btn-scan');
-    const btnDownload = document.getElementById('btn-download');
-    const urlInput    = document.getElementById('url-input');
-    const statusBar   = document.getElementById('status-bar');
-    const resultsDiv  = document.getElementById('results');
+    const btnScan        = document.getElementById('btn-scan');
+    const btnDownload    = document.getElementById('btn-download');
+    const btnErrors      = document.getElementById('btn-errors');
+    const btnCloseErr    = document.getElementById('btn-close-errors');
+    const btnSaveChanges = document.getElementById('btn-save-changes');
+    const urlInput       = document.getElementById('url-input');
+    const statusBar      = document.getElementById('status-bar');
+    const resultsDiv     = document.getElementById('results');
+    const errorList      = document.getElementById('error-list');
+    const errorListTitle = document.getElementById('error-list-title');
+    const errorTbody     = document.getElementById('error-tbody');
 
     let currentScanId = null;
     let pollTimer     = null;
@@ -277,10 +469,13 @@
 
     function reset() {
       clearInterval(pollTimer);
-      currentScanId       = null;
+      currentScanId             = null;
       btnDownload.style.display = 'none';
+      btnErrors.style.display   = 'none';
       resultsDiv.style.display  = 'none';
+      errorList.style.display   = 'none';
       statusBar.style.display   = 'none';
+      errorTbody.innerHTML      = '';
     }
 
     btnScan.addEventListener('click', async () => {
@@ -347,8 +542,91 @@
           document.getElementById('stat-errors').textContent   = errCount;
           document.getElementById('stat-duration').textContent = (d.durationMs / 1000).toFixed(2) + ' s';
 
+          // Build error rows
+          const errorLinks = [
+            ...d.sections.flatMap(s => s.links.filter(l => l.status !== 200).map(l => ({ source: 'Home', link: l }))),
+            ...d.subPages.flatMap(p => p.links.filter(l => l.status !== 200).map(l => ({ source: p.navLinkText, link: l }))),
+          ];
+
+          errorTbody.innerHTML = errorLinks.map(({ source, link }, idx) => `
+            <tr data-idx="${idx}" data-source="${escHtml(source)}" data-href="${escHtml(link.href)}" data-orig-status="${link.status ?? 'ERR'}" data-orig-reason="${escHtml(link.reason ?? link.error ?? '')}">
+              <td style="text-align:center">
+                <label class="switch" title="Mark as OK (200)">
+                  <input type="checkbox" class="toggle-ok" />
+                  <span class="slider"></span>
+                </label>
+              </td>
+              <td class="td-source">${escHtml(source)}</td>
+              <td>${escHtml(link.text)}</td>
+              <td style="display:flex;align-items:flex-start;gap:6px">
+                <a href="${escHtml(link.href)}" target="_blank" rel="noreferrer" style="color:#93c5fd;word-break:break-all">${escHtml(link.href)}</a>
+                <a href="${escHtml(link.href)}" target="_blank" rel="noreferrer" title="Open in new tab" style="flex-shrink:0;background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f6;border-radius:5px;padding:2px 7px;font-size:0.78rem;text-decoration:none;line-height:1.6">↗</a>
+              </td>
+              <td class="td-status">${link.status ?? 'ERR'}</td>
+              <td class="td-reason" contenteditable="true" spellcheck="false">${escHtml(link.reason ?? link.error ?? '')}<span class="save-indicator">✓ saved</span></td>
+            </tr>
+          `).join('');
+
+          // Toggle switch: mark link as OK (200) or revert to original status
+          errorTbody.addEventListener('change', async (e) => {
+            const toggle = e.target.closest('.toggle-ok');
+            if (!toggle) return;
+            const row        = toggle.closest('tr');
+            const source     = row.dataset.source;
+            const href       = row.dataset.href;
+            const origStatus = row.dataset.origStatus;
+            const origReason = row.dataset.origReason ?? '';
+            const statusCell = row.querySelector('.td-status');
+            const reasonCell = row.querySelector('.td-reason');
+            const indicator  = reasonCell.querySelector('.save-indicator');
+            const checked    = toggle.checked;
+            const newStatus  = checked ? 200 : (origStatus === 'ERR' ? null : Number(origStatus));
+            const newReason  = checked ? '' : origReason;
+
+            try {
+              const res = await fetch(`/api/scan/${currentScanId}/link`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source, href, status: newStatus, reason: newReason }),
+              });
+              if (res.ok) {
+                statusCell.textContent = checked ? '200' : (origStatus ?? 'ERR');
+                statusCell.classList.toggle('overridden', checked);
+                // Update reason cell text (preserve the indicator span)
+                reasonCell.childNodes[0].textContent = newReason;
+              }
+            } catch (_) { toggle.checked = !checked; /* revert on error */ }
+          });
+
+          // Save reason on blur
+          errorTbody.addEventListener('blur', async (e) => {
+            const cell = e.target.closest('.td-reason');
+            if (!cell) return;
+            const row     = cell.closest('tr');
+            const source  = row.dataset.source;
+            const href    = row.dataset.href;
+            // Get text content without the save indicator span
+            const indicator = cell.querySelector('.save-indicator');
+            const reason  = cell.childNodes[0]?.textContent?.trim() ?? '';
+
+            try {
+              const res = await fetch(`/api/scan/${currentScanId}/link`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source, href, reason }),
+              });
+              if (res.ok && indicator) {
+                indicator.classList.add('show');
+                setTimeout(() => indicator.classList.remove('show'), 2000);
+              }
+            } catch (_) { /* silent fail */ }
+          }, true);
+
+          errorListTitle.textContent = `Error Links  (${errorLinks.length})`;
+
           resultsDiv.style.display  = 'block';
           btnDownload.style.display = 'block';
+          if (errorLinks.length > 0) btnErrors.style.display = 'block';
           setStatus('done', '✅ Scan complete — Excel saved to your Downloads folder');
           btnScan.disabled = false;
 
@@ -364,6 +642,61 @@
       if (!currentScanId) return;
       window.location.href = `/api/scan/${currentScanId}/export`;
     });
+
+    btnErrors.addEventListener('click', () => {
+      const visible = errorList.style.display === 'block';
+      errorList.style.display = visible ? 'none' : 'block';
+      btnErrors.textContent   = visible ? '⚠️ View Error Links' : '⚠️ Hide Error Links';
+    });
+
+    btnCloseErr.addEventListener('click', () => {
+      errorList.style.display = 'none';
+      btnErrors.textContent   = '⚠️ View Error Links';
+    });
+
+    btnSaveChanges.addEventListener('click', async () => {
+      if (!currentScanId) return;
+      const rows = [...errorTbody.querySelectorAll('tr')];
+      if (rows.length === 0) return;
+
+      btnSaveChanges.disabled     = true;
+      btnSaveChanges.textContent  = '💾 Saving…';
+
+      const patches = rows.map(row => {
+        const reasonCell = row.querySelector('.td-reason');
+        const reason     = reasonCell.childNodes[0]?.textContent?.trim() ?? '';
+        return fetch(`/api/scan/${currentScanId}/link`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: row.dataset.source, href: row.dataset.href, reason }),
+        });
+      });
+
+      try {
+        await Promise.all(patches);
+        btnSaveChanges.textContent = '✓ Saved';
+        // Show all indicators briefly
+        errorTbody.querySelectorAll('.save-indicator').forEach(el => {
+          el.classList.add('show');
+          setTimeout(() => el.classList.remove('show'), 2000);
+        });
+      } catch (_) {
+        btnSaveChanges.textContent = '❌ Error';
+      } finally {
+        setTimeout(() => {
+          btnSaveChanges.textContent = '💾 Save changes';
+          btnSaveChanges.disabled    = false;
+        }, 2200);
+      }
+    });
+
+    function escHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
 
     // Allow Enter key to trigger scan
     urlInput.addEventListener('keydown', e => {
