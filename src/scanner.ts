@@ -26,11 +26,19 @@ export interface SubPageResult {
   links: SectionLink[];
 }
 
+export interface PhraseResult {
+  pageType: 'home' | 'subpage';
+  pageName: string;
+  pageUrl: string;
+  count: number;
+}
+
 export interface ScanResult {
   url: string;
   pageTitle: string;
   sections: SectionResult[];
   subPages: SubPageResult[];
+  phraseMatches?: PhraseResult[];
   scannedAt: string;
   durationMs: number;
   totalLinks: number;
@@ -65,6 +73,175 @@ function isNavigableUrl(href: string): boolean {
   const ext = href.split('?')[0].split('#')[0].toLowerCase();
   if (ext.endsWith('.css') || ext.endsWith('.js')) return false;
   return true;
+}
+
+// ─── Phrase search utilities ────────────────────────────
+
+/**
+ * Normalize text for phrase matching:
+ * - lowercase
+ * - convert smart quotes to regular quotes
+ * - convert em-dashes to hyphens
+ * - collapse whitespace around punctuation
+ */
+function normalizeForSearch(text: string): string {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2014\u2013]/g, '-')
+    .replace(/\s*([/\-:;,])\s*/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Count occurrences of phrase in text using word boundaries.
+ * Both text and phrase are normalized before matching.
+ */
+function countPhraseMatches(text: string, phrase: string): number {
+  const normalizedText = normalizeForSearch(text);
+  const normalizedPhrase = normalizeForSearch(phrase);
+  
+  if (!normalizedPhrase) return 0;
+  
+  // Simple substring search: find all occurrences (including within words)
+  let count = 0;
+  let pos = 0;
+  while ((pos = normalizedText.indexOf(normalizedPhrase, pos)) !== -1) {
+    count++;
+    pos += normalizedPhrase.length;
+  }
+  
+  return count;
+}
+
+/**
+ * Extract visible text from the .ddc-wrapper for phrase searching.
+ * Applies same cleanup as link extraction, then extracts all text.
+ * Expands collapsed/hidden content.
+ */
+function extractVisibleText(html: string): string {
+  const $ = cheerio.load(html);
+  const wrapper = $('.ddc-wrapper');
+  if (wrapper.length === 0) return '';
+
+  // Expand collapsed content before cleanup
+  wrapper.find('[aria-expanded="false"]').attr('aria-expanded', 'true');
+  wrapper.find('[aria-hidden="true"]').attr('aria-hidden', 'false');
+  wrapper.find('[hidden]').removeAttr('hidden');
+  wrapper.find('.collapse').removeClass('collapse');
+  wrapper.find('.collapse-item').removeClass('collapse-item');
+  wrapper.find('[style*="display:none"]').attr('style', '');
+  wrapper.find('[style*="display: none"]').attr('style', '');
+  wrapper.find('.tab-pane').addClass('active show in');
+  wrapper.find('[role="tabpanel"][aria-hidden="true"]').attr('aria-hidden', 'false');
+  wrapper.find('[role="tab"][aria-selected="false"]').attr('aria-selected', 'true');
+
+  // Apply same cleanup as link extraction
+  for (const sel of CLEANUP_SELECTORS) {
+    wrapper.find(sel).remove();
+  }
+
+  // Remove script, style, noscript tags
+  wrapper.find('script, style, noscript').remove();
+
+  // Extract all text content
+  let text = '';
+  const walk = (el: any) => {
+    if (!el) return;
+    if (el.type === 'text') {
+      text += (el.data || '') + ' ';
+      return;
+    }
+    if (el.type !== 'tag') return;
+    const tag = el.name?.toLowerCase();
+    // Add line break after block tags
+    if (['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'section', 'article', 'blockquote', 'tr', 'dt', 'dd', 'figcaption', 'br'].includes(tag || '')) {
+      text += '\n';
+    }
+    if (el.children) {
+      el.children.forEach(walk);
+    }
+  };
+
+  const root = wrapper[0];
+  if (root && root.children) {
+    root.children.forEach(walk);
+  }
+
+  return text;
+}
+
+/**
+ * Extract visible text from all sections (Navigation, Footer, DDC Wrapper) for phrase searching.
+ * Used for home page to include nav and footer text.
+ * Expands collapsed/hidden content like "read more" blocks.
+ */
+function extractVisibleTextFromAllSections(html: string): string {
+  const $ = cheerio.load(html);
+  let allText = '';
+
+  // Extract from each section
+  const sections = [
+    '.header-navigation',
+    '.ddc-footer',
+    '.ddc-wrapper',
+  ];
+
+  for (const selector of sections) {
+    const el = $(selector);
+    if (el.length === 0) continue;
+
+    // Clone the element to avoid modifying the original
+    const cloned = el.clone();
+
+    // Expand collapsed content before cleanup
+    cloned.find('[aria-expanded="false"]').attr('aria-expanded', 'true');
+    cloned.find('[aria-hidden="true"]').attr('aria-hidden', 'false');
+    cloned.find('[hidden]').removeAttr('hidden');
+    cloned.find('.collapse').removeClass('collapse');
+    cloned.find('.collapse-item').removeClass('collapse-item');
+    cloned.find('[style*="display:none"]').attr('style', '');
+    cloned.find('[style*="display: none"]').attr('style', '');
+    cloned.find('.tab-pane').addClass('active show in');
+    cloned.find('[role="tabpanel"][aria-hidden="true"]').attr('aria-hidden', 'false');
+    cloned.find('[role="tab"][aria-selected="false"]').attr('aria-selected', 'true');
+
+    // Apply cleanup
+    for (const sel of CLEANUP_SELECTORS) {
+      cloned.find(sel).remove();
+    }
+    cloned.find('script, style, noscript').remove();
+
+    // Extract text
+    let text = '';
+    const walk = (node: any) => {
+      if (!node) return;
+      if (node.type === 'text') {
+        text += (node.data || '') + ' ';
+        return;
+      }
+      if (node.type !== 'tag') return;
+      const tag = node.name?.toLowerCase();
+      if (['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'section', 'article', 'blockquote', 'tr', 'dt', 'dd', 'figcaption', 'br'].includes(tag || '')) {
+        text += '\n';
+      }
+      if (node.children) {
+        node.children.forEach(walk);
+      }
+    };
+
+    const root = cloned[0] as any;
+    if (root && root.children) {
+      root.children.forEach(walk);
+    }
+
+    allText += text + '\n';
+  }
+
+  return allText;
 }
 
 // ─── Reason descriptions ─────────────────────────────────
@@ -367,6 +544,7 @@ export async function scanPage(
   concurrency = 5,
   delayMin = 300,
   delayMax = 1500,
+  phrase?: string,
 ): Promise<ScanResult> {
   const start = Date.now();
   const client = createClient();
@@ -377,8 +555,12 @@ export async function scanPage(
   // Shared status cache across home + all sub-pages
   const statusCache = new Map<string, { status: number | null; error: string | null; reason: string | null }>();
 
+  // Phrase search results
+  const phraseMatches: PhraseResult[] = [];
+
   console.log(`\n🔍 [SCAN] Starting: ${url}`);
   console.log(`   Concurrency: ${concurrency} | Delay: ${delayMin}-${delayMax}ms`);
+  if (phrase) console.log(`   🔎 Searching for phrase: "${phrase}"`);
 
   // ── HOME PAGE ──────────────────────────────
   const pageRes = await client.get(url, {
@@ -393,6 +575,19 @@ export async function scanPage(
   console.log(`   📄 Extracting home sections...`);
 
   const sections = extractAllSections($, url);
+
+  // Search for phrase in home if provided
+  if (phrase) {
+    const homeText = extractVisibleTextFromAllSections(html);
+    const homeCount = countPhraseMatches(homeText, phrase);
+    console.log(`   🔎 Phrase matches in home: ${homeCount}`);
+    phraseMatches.push({
+      pageType: 'home',
+      pageName: 'Home',
+      pageUrl: url,
+      count: homeCount,
+    });
+  }
 
   console.log(`\n📡 Checking home URLs...`);
   await resolveStatuses(sections, statusCache, client, url, limit, delayMin, delayMax);
@@ -433,6 +628,19 @@ export async function scanPage(
       const cleanedLinks = extractCleanedLinks(subHtml, navLink.href);
       console.log(`      📦 Links after cleanup: ${cleanedLinks.length}`);
 
+      // Search for phrase in subpage if provided
+      if (phrase) {
+        const subPageText = extractVisibleText(subHtml);
+        const subPageCount = countPhraseMatches(subPageText, phrase);
+        console.log(`      🔎 Phrase matches: ${subPageCount}`);
+        phraseMatches.push({
+          pageType: 'subpage',
+          pageName: navLink.text,
+          pageUrl: navLink.href,
+          count: subPageCount,
+        });
+      }
+
       console.log(`      📡 Checking URLs...`);
       await resolveStatusesFlat(cleanedLinks, statusCache, client, navLink.href, limit, delayMin, delayMax);
 
@@ -462,7 +670,7 @@ export async function scanPage(
   console.log(`\n✅ [SCAN COMPLETE] ${elapsed}s`);
   console.log(`   Home links: ${homeLinks} | Sub-page links: ${subLinksTotal} | Total: ${totalLinks}\n`);
 
-  return {
+  const result: ScanResult = {
     url,
     pageTitle,
     sections,
@@ -471,4 +679,10 @@ export async function scanPage(
     durationMs: Date.now() - start,
     totalLinks,
   };
+
+  if (phrase && phraseMatches.length > 0) {
+    result.phraseMatches = phraseMatches;
+  }
+
+  return result;
 }

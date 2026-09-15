@@ -387,6 +387,16 @@
       <button id="btn-scan">Scan</button>
     </div>
 
+    <label for="phrase-input" style="margin-top: 16px; display: block">Search Phrase (optional)</label>
+    <input
+      type="text"
+      id="phrase-input"
+      placeholder="e.g., pre-owned, financing, 2026"
+      autocomplete="off"
+      spellcheck="false"
+      style="width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px 14px; color: #f1f5f9; font-size: 0.95rem; outline: none; transition: border-color .2s; box-sizing: border-box; margin-bottom: 14px"
+    />
+
     <div id="status-bar"></div>
 
     <div id="results">
@@ -443,6 +453,23 @@
         </table>
       </div>
     </div>
+
+    <div id="phrase-results" style="display: none; margin-top: 20px">
+      <hr class="divider" />
+      <div class="section-title">🔎 Phrase Search Results</div>
+      <div id="phrase-table-wrap" style="overflow-x: auto; margin-top: 10px">
+        <table id="phrase-table" style="width: 100%; border-collapse: collapse">
+          <thead>
+            <tr style="background: #0f172a; border-bottom: 2px solid #334155">
+              <th style="text-align: left; padding: 12px; font-weight: 600; color: #f1f5f9">Page</th>
+              <th style="text-align: left; padding: 12px; font-weight: 600; color: #f1f5f9">URL</th>
+              <th style="text-align: center; padding: 12px; font-weight: 600; color: #f1f5f9">Count</th>
+            </tr>
+          </thead>
+          <tbody id="phrase-tbody" style="background: #1e293b"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -452,11 +479,14 @@
     const btnCloseErr    = document.getElementById('btn-close-errors');
     const btnSaveChanges = document.getElementById('btn-save-changes');
     const urlInput       = document.getElementById('url-input');
+    const phraseInput    = document.getElementById('phrase-input');
     const statusBar      = document.getElementById('status-bar');
     const resultsDiv     = document.getElementById('results');
     const errorList      = document.getElementById('error-list');
     const errorListTitle = document.getElementById('error-list-title');
     const errorTbody     = document.getElementById('error-tbody');
+    const phraseResults  = document.getElementById('phrase-results');
+    const phraseTbody    = document.getElementById('phrase-tbody');
 
     let currentScanId = null;
     let pollTimer     = null;
@@ -474,8 +504,10 @@
       btnErrors.style.display   = 'none';
       resultsDiv.style.display  = 'none';
       errorList.style.display   = 'none';
+      phraseResults.style.display = 'none';
       statusBar.style.display   = 'none';
       errorTbody.innerHTML      = '';
+      phraseTbody.innerHTML     = '';
     }
 
     btnScan.addEventListener('click', async () => {
@@ -486,11 +518,13 @@
       btnScan.disabled = true;
       setStatus('running', '<span class="spinner"></span> Starting scan…');
 
+      const phrase = phraseInput.value.trim() || undefined;
+
       try {
         const res = await fetch('/api/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ url, concurrency: 5, delayMin: 300, delayMax: 1500 }),
+          body: JSON.stringify({ url, concurrency: 5, delayMin: 300, delayMax: 1500, phrase }),
         });
 
         if (!res.ok) {
@@ -623,6 +657,20 @@
           }, true);
 
           errorListTitle.textContent = `Error Links  (${errorLinks.length})`;
+
+          // Show phrase results if available
+          if (d.phraseMatches && d.phraseMatches.length > 0) {
+            phraseTbody.innerHTML = d.phraseMatches.map(match => `
+              <tr style="border-bottom: 1px solid #334155">
+                <td style="padding: 12px; color: #f1f5f9">${escHtml(match.pageName)}</td>
+                <td style="padding: 12px">
+                  <a href="${escHtml(match.pageUrl)}" target="_blank" rel="noreferrer" style="color:#93c5fd;word-break:break-all">${escHtml(match.pageUrl)}</a>
+                </td>
+                <td style="padding: 12px; text-align: center; font-weight: 600; color: #4ade80">${match.count}</td>
+              </tr>
+            `).join('');
+            phraseResults.style.display = 'block';
+          }
 
           resultsDiv.style.display  = 'block';
           btnDownload.style.display = 'block';
