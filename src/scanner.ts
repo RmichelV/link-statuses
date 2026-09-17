@@ -120,12 +120,27 @@ function countPhraseMatches(text: string, phrase: string): number {
 /**
  * Extract visible text from the .ddc-wrapper for phrase searching.
  * Applies same cleanup as link extraction, then extracts all text.
+ * Also includes meta tags (title, description, keywords, og:*, twitter:*)
  * Expands collapsed/hidden content.
  */
 function extractVisibleText(html: string): string {
   const $ = cheerio.load(html);
+  let allText = '';
+
+  // Extract meta tags first
+  $('meta').each((_, el) => {
+    const name = $(el).attr('name') || $(el).attr('property') || '';
+    const content = $(el).attr('content') || '';
+    if (content && (name.includes('description') || name.includes('keywords') || name.includes('title') || name.includes('og:') || name.includes('twitter:'))) {
+      allText += content + ' ';
+    }
+  });
+  $('title').each((_, el) => {
+    allText += $(el).text() + ' ';
+  });
+
   const wrapper = $('.ddc-wrapper');
-  if (wrapper.length === 0) return '';
+  if (wrapper.length === 0) return allText;
 
   // Expand collapsed content before cleanup
   wrapper.find('[aria-expanded="false"]').attr('aria-expanded', 'true');
@@ -147,7 +162,7 @@ function extractVisibleText(html: string): string {
   // Remove script, style, noscript tags
   wrapper.find('script, style, noscript').remove();
 
-  // Extract all text content
+  // Extract all text content from wrapper
   let text = '';
   const walk = (el: any) => {
     if (!el) return;
@@ -171,17 +186,30 @@ function extractVisibleText(html: string): string {
     root.children.forEach(walk);
   }
 
-  return text;
+  return allText + text;
 }
 
 /**
  * Extract visible text from all sections (Navigation, Footer, DDC Wrapper) for phrase searching.
  * Used for home page to include nav and footer text.
+ * Also includes meta tags (title, description, keywords, og:*, twitter:*)
  * Expands collapsed/hidden content like "read more" blocks.
  */
 function extractVisibleTextFromAllSections(html: string): string {
   const $ = cheerio.load(html);
   let allText = '';
+
+  // Extract meta tags first
+  $('meta').each((_, el) => {
+    const name = $(el).attr('name') || $(el).attr('property') || '';
+    const content = $(el).attr('content') || '';
+    if (content && (name.includes('description') || name.includes('keywords') || name.includes('title') || name.includes('og:') || name.includes('twitter:'))) {
+      allText += content + ' ';
+    }
+  });
+  $('title').each((_, el) => {
+    allText += $(el).text() + ' ';
+  });
 
   // Extract from each section
   const sections = [

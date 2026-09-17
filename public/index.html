@@ -658,18 +658,21 @@
 
           errorListTitle.textContent = `Error Links  (${errorLinks.length})`;
 
-          // Show phrase results if available
+          // Show phrase results if available (only those with count > 0)
           if (d.phraseMatches && d.phraseMatches.length > 0) {
-            phraseTbody.innerHTML = d.phraseMatches.map(match => `
-              <tr style="border-bottom: 1px solid #334155">
-                <td style="padding: 12px; color: #f1f5f9">${escHtml(match.pageName)}</td>
-                <td style="padding: 12px">
-                  <a href="${escHtml(match.pageUrl)}" target="_blank" rel="noreferrer" style="color:#93c5fd;word-break:break-all">${escHtml(match.pageUrl)}</a>
-                </td>
-                <td style="padding: 12px; text-align: center; font-weight: 600; color: #4ade80">${match.count}</td>
-              </tr>
-            `).join('');
-            phraseResults.style.display = 'block';
+            const matchesWithResults = d.phraseMatches.filter(match => match.count > 0);
+            if (matchesWithResults.length > 0) {
+              phraseTbody.innerHTML = matchesWithResults.map(match => `
+                <tr style="border-bottom: 1px solid #334155; background: rgba(239, 68, 68, 0.1)">
+                  <td style="padding: 12px; color: #f1f5f9">${escHtml(match.pageName)}</td>
+                  <td style="padding: 12px">
+                    <a href="${escHtml(match.pageUrl)}" target="_blank" rel="noreferrer" style="color:#93c5fd;word-break:break-all">${escHtml(match.pageUrl)}</a>
+                  </td>
+                  <td style="padding: 12px; text-align: center; font-weight: 600; color: #ef4444">${match.count}</td>
+                </tr>
+              `).join('');
+              phraseResults.style.display = 'block';
+            }
           }
 
           resultsDiv.style.display  = 'block';
