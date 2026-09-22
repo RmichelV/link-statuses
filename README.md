@@ -145,3 +145,5 @@ link-statuses/
 ├── tsconfig.json
 └── README.md
 ```
+## New feature available! 
+in  the second input-text you can add a word/phrase and at the end of the results, you can view a new table with the links that have the word/phrase that you was looking for
